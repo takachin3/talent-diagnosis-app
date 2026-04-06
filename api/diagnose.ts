@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { GoogleGenAI } from '@google/genai'
-import { checkAuth, logToSheet, getClientIp } from './_utils'
-import { SYSTEM_PROMPT } from './_prompt'
+import { checkAuth, logToSheet, getClientIp } from './_utils.js'
+import { SYSTEM_PROMPT } from './_prompt.js'
 
 export const config = {
   maxDuration: 60,
