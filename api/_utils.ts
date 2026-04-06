@@ -1,4 +1,5 @@
 import type { VercelRequest } from '@vercel/node'
+import { google } from 'googleapis'
 
 export function checkAuth(req: VercelRequest): boolean {
   const password = req.headers['x-app-password']
@@ -24,17 +25,73 @@ export type LogPayload = {
   error?: string
 }
 
+const HEADERS = [
+  'timestamp',
+  'event',
+  'username',
+  'targetName',
+  'success',
+  'error',
+  'ip',
+  'userAgent',
+]
+
+let sheetsClient: ReturnType<typeof google.sheets> | null = null
+
+function getSheetsClient() {
+  if (sheetsClient) return sheetsClient
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+  if (!raw) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON not set')
+  const credentials = JSON.parse(raw)
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  })
+  sheetsClient = google.sheets({ version: 'v4', auth })
+  return sheetsClient
+}
+
 export async function logToSheet(payload: LogPayload): Promise<void> {
-  const url = process.env.SHEET_WEBHOOK_URL
-  if (!url) {
-    console.warn('SHEET_WEBHOOK_URL not set; skipping log')
+  const sheetId = process.env.GOOGLE_SHEET_ID
+  if (!sheetId || !process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    console.warn('Sheets logging not configured; skipping')
     return
   }
   try {
-    await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+    const sheets = getSheetsClient()
+
+    // ヘッダー行が無ければ追加
+    const head = await sheets.spreadsheets.values.get({
+      spreadsheetId: sheetId,
+      range: 'A1:H1',
+    })
+    if (!head.data.values || head.data.values.length === 0) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: sheetId,
+        range: 'A1:H1',
+        valueInputOption: 'RAW',
+        requestBody: { values: [HEADERS] },
+      })
+    }
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: 'A:H',
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [
+          [
+            payload.timestamp,
+            payload.event,
+            payload.username,
+            payload.targetName || '',
+            payload.success ? '✓' : '✗',
+            payload.error || '',
+            payload.ip,
+            payload.userAgent,
+          ],
+        ],
+      },
     })
   } catch (e) {
     console.error('sheet log failed', e)
