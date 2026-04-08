@@ -1,6 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { GoogleGenAI } from '@google/genai'
-import { checkAuth, logToSheet, getClientIp, withRetry } from './_utils.js'
+import {
+  checkAuth,
+  logToSheet,
+  getClientIp,
+  getGeminiClient,
+  GEMINI_MODEL,
+} from './_utils.js'
 import { SYSTEM_PROMPT } from './_prompt.js'
 
 export const config = {
@@ -21,11 +26,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (!transcript || !name || !previous || !changeRequest) {
     return res.status(400).json({ error: '必須パラメータが不足しています' })
-  }
-
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) {
-    return res.status(500).json({ error: 'サーバーにGEMINI_API_KEYが設定されていません' })
   }
 
   const baseLog = {
@@ -66,18 +66,16 @@ ${changeRequest}
 ${transcript}`
 
   try {
-    const ai = new GoogleGenAI({ apiKey })
-    const response = await withRetry(() =>
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: editPrompt,
-        config: {
-          systemInstruction: SYSTEM_PROMPT,
-          responseMimeType: 'application/json',
-          temperature: 0.3,
-        },
-      }),
-    )
+    const ai = getGeminiClient()
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: editPrompt,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        temperature: 0.3,
+      },
+    })
 
     const text = response.text
     if (!text) throw new Error('Geminiから空のレスポンスが返ってきました')

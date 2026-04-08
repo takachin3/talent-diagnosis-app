@@ -1,6 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { GoogleGenAI } from '@google/genai'
-import { checkAuth, logToSheet, getClientIp, withRetry } from './_utils.js'
+import {
+  checkAuth,
+  logToSheet,
+  getClientIp,
+  getGeminiClient,
+  GEMINI_MODEL,
+} from './_utils.js'
 import { SYSTEM_PROMPT } from './_prompt.js'
 
 export const config = {
@@ -21,11 +26,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'transcript と name は必須です' })
   }
 
-  const apiKey = process.env.GEMINI_API_KEY
-  if (!apiKey) {
-    return res.status(500).json({ error: 'サーバーにGEMINI_API_KEYが設定されていません' })
-  }
-
   const baseLog = {
     timestamp: new Date().toISOString(),
     username: username?.trim() || '(none)',
@@ -35,24 +35,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey })
-    const response = await withRetry(() =>
-      ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `対象者の名前: ${name}
+    const ai = getGeminiClient()
+    const response = await ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: `対象者の名前: ${name}
 
 以下が才能診断セッションの文字起こしです。これを元に、定義に従って7項目をJSONで返してください。
 
 ---
 ${transcript}
 ---`,
-        config: {
-          systemInstruction: SYSTEM_PROMPT,
-          responseMimeType: 'application/json',
-          temperature: 0.7,
-        },
-      }),
-    )
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        responseMimeType: 'application/json',
+        temperature: 0.7,
+      },
+    })
 
     const text = response.text
     if (!text) throw new Error('Geminiから空のレスポンスが返ってきました')
