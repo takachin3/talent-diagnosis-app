@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { GoogleGenAI } from '@google/genai'
-import { checkAuth, logToSheet, getClientIp } from './_utils.js'
+import { checkAuth, logToSheet, getClientIp, withRetry } from './_utils.js'
 import { SYSTEM_PROMPT } from './_prompt.js'
 
 export const config = {
@@ -67,15 +67,17 @@ ${transcript}`
 
   try {
     const ai = new GoogleGenAI({ apiKey })
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: editPrompt,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: 'application/json',
-        temperature: 0.3,
-      },
-    })
+    const response = await withRetry(() =>
+      ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: editPrompt,
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: 'application/json',
+          temperature: 0.3,
+        },
+      }),
+    )
 
     const text = response.text
     if (!text) throw new Error('Geminiから空のレスポンスが返ってきました')

@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { GoogleGenAI } from '@google/genai'
-import { checkAuth, logToSheet, getClientIp } from './_utils.js'
+import { checkAuth, logToSheet, getClientIp, withRetry } from './_utils.js'
 import { SYSTEM_PROMPT } from './_prompt.js'
 
 export const config = {
@@ -36,21 +36,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const ai = new GoogleGenAI({ apiKey })
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `対象者の名前: ${name}
+    const response = await withRetry(() =>
+      ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `対象者の名前: ${name}
 
 以下が才能診断セッションの文字起こしです。これを元に、定義に従って7項目をJSONで返してください。
 
 ---
 ${transcript}
 ---`,
-      config: {
-        systemInstruction: SYSTEM_PROMPT,
-        responseMimeType: 'application/json',
-        temperature: 0.7,
-      },
-    })
+        config: {
+          systemInstruction: SYSTEM_PROMPT,
+          responseMimeType: 'application/json',
+          temperature: 0.7,
+        },
+      }),
+    )
 
     const text = response.text
     if (!text) throw new Error('Geminiから空のレスポンスが返ってきました')

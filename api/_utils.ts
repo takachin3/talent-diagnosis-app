@@ -14,6 +14,29 @@ export function getClientIp(req: VercelRequest): string {
   return req.socket?.remoteAddress || 'unknown'
 }
 
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  options: { retries?: number; baseDelayMs?: number } = {},
+): Promise<T> {
+  const retries = options.retries ?? 3
+  const baseDelay = options.baseDelayMs ?? 1500
+  let lastErr: unknown
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      const msg = err instanceof Error ? err.message : String(err)
+      const retriable =
+        /503|UNAVAILABLE|overloaded|high demand|429|RESOURCE_EXHAUSTED/i.test(msg)
+      if (!retriable || attempt === retries) throw err
+      const delay = baseDelay * Math.pow(2, attempt)
+      await new Promise((r) => setTimeout(r, delay))
+    }
+  }
+  throw lastErr
+}
+
 export type LogPayload = {
   event: 'login' | 'diagnose' | 'regenerate'
   timestamp: string
